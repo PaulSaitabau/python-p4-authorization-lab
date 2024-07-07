@@ -10,8 +10,25 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.json.compact = False
 migrate = Migrate(app, db)
 db.init_app(app)
+
 api = Api(app)
+
+@app.before_request
+def check_if_logged_in():
+    open_access_list = [
+        'clear',
+        'article_list',
+        'show_article',
+        'login',
+        'logout',
+        'check_session'
+    ]
+
+    if (request.endpoint) not in open_access_list and (not session.get('user_id')):
+        return {'error': '401 Unauthorized'}, 401
+
 class ClearSession(Resource):
+
     def delete(self):
     
         session['page_views'] = None
@@ -31,7 +48,12 @@ class ShowArticle(Resource):
             session['page_views'] += 1
             if session['page_views'] <= 3:
                 return article_json, 200
-            return {'message': 'Maximum pageview limit reached'}, 401
+            return make_response(
+                jsonify({
+                    'message': 'Maximum pageview limit reached'
+                }),
+                401
+            )
         return article_json, 200
 class Login(Resource):
     def post(self):
@@ -60,25 +82,16 @@ class CheckSession(Resource):
 class MemberOnlyIndex(Resource):
 
     def get(self):
-        
-        if not session.get('user_id'):
-            return {'message': 'Unauthorized access'}, 401
 
-        articles = [article.to_dict() for article in Article.query.filter_by(is_member_only=True)]
-        return make_response(jsonify(articles), 200)
+        articles = Article.query.filter(Article.is_member_only == True).all()
+        return [article.to_dict() for article in articles], 200
 
 class MemberOnlyArticle(Resource):
 
     def get(self, id):
-       
-        if not session.get('user_id'):
-            return {'message': 'Unauthorized access'}, 401
+      
 
-        article = Article.query.filter(Article.id == id, Article.is_member_only == True).first()
-
-        if not article:
-            return {'message': 'Article not found or not member-only'}, 404
-
+        article = Article.query.filter(Article.id == id).first()
         return article.to_dict(), 200
 
 api.add_resource(ClearSession, '/clear', endpoint='clear')
@@ -89,7 +102,5 @@ api.add_resource(Logout, '/logout', endpoint='logout')
 api.add_resource(CheckSession, '/check_session', endpoint='check_session')
 api.add_resource(MemberOnlyIndex, '/members_only_articles', endpoint='member_index')
 api.add_resource(MemberOnlyArticle, '/members_only_articles/<int:id>', endpoint='member_article')
-
-
 if __name__ == '__main__':
-  app.run(port=5555, debug=True)
+    app.run(port=5555, debug=True)
